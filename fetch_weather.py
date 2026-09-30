@@ -60,66 +60,72 @@ def fetch_cwa_weather(api_key: str, api_url: str = CWA_API_URL) -> dict:
 
 def parse_temperature_data(json_data: dict) -> pd.DataFrame:
     """解析 JSON 資料結構，適用於 F-D0047-091 以及 F-C0032-001 (Phase 2: Steps 5-7)"""
-    records = []
     rec_obj = json_data.get("records", {})
 
     # 定義 location 清單位址 (相容 F-D0047-091 的 Locations[0].Location 與 F-C0032-001 的 location)
     locations = []
     if "Locations" in rec_obj and len(rec_obj["Locations"]) > 0:
         locations = rec_obj["Locations"][0].get("Location", [])
+    elif "locations" in rec_obj and len(rec_obj["locations"]) > 0:
+        locations = rec_obj["locations"][0].get("location", [])
+    elif "Location" in rec_obj:
+        locations = rec_obj["Location"]
     elif "location" in rec_obj:
         locations = rec_obj["location"]
 
+    daily_data = {}
+
     for loc in locations:
         location_name = loc.get("LocationName") or loc.get("locationName")
+        if not location_name:
+            continue
         elements = loc.get("WeatherElement") or loc.get("weatherElement") or []
 
-        # 尋找 MinT / 最低溫度 與 MaxT / 最高溫度
-        mint_elem = next(
-            (e for e in elements if e.get("ElementName") in ["最低溫度", "MinT"] or e.get("elementName") in ["最低溫度", "MinT"]),
-            {}
-        )
-        maxt_elem = next(
-            (e for e in elements if e.get("ElementName") in ["最高溫度", "MaxT"] or e.get("elementName") in ["最高溫度", "MaxT"]),
-            {}
-        )
+        for elem in elements:
+            e_name = elem.get("ElementName") or elem.get("elementName")
+            times = elem.get("Time") or elem.get("time") or []
 
-        mint_times = mint_elem.get("Time") or mint_elem.get("time") or []
-        maxt_times = maxt_elem.get("Time") or maxt_elem.get("time") or []
+            if e_name in ["最低溫度", "MinT"]:
+                for t in times:
+                    start_time = t.get("StartTime") or t.get("startTime", "")
+                    data_date = start_time[:10]
+                    ev = t.get("ElementValue") or t.get("elementValue") or [{}]
+                    min_val = ev[0].get("MinTemperature") or ev[0].get("value")
+                    if min_val is None and "parameter" in t:
+                        min_val = t["parameter"].get("parameterName")
+                    if data_date and min_val is not None:
+                        try:
+                            daily_data.setdefault((location_name, data_date), {"minT": [], "maxT": []})["minT"].append(float(min_val))
+                        except (ValueError, TypeError):
+                            pass
 
-        # 配對並萃取每個時間區段之氣溫
-        for t_min, t_max in zip(mint_times, maxt_times):
-            start_time = t_min.get("StartTime") or t_min.get("startTime", "")
-            data_date = start_time.split("T")[0].split(" ")[0] if start_time else "N/A"
+            elif e_name in ["最高溫度", "MaxT"]:
+                for t in times:
+                    start_time = t.get("StartTime") or t.get("startTime", "")
+                    data_date = start_time[:10]
+                    ev = t.get("ElementValue") or t.get("elementValue") or [{}]
+                    max_val = ev[0].get("MaxTemperature") or ev[0].get("value")
+                    if max_val is None and "parameter" in t:
+                        max_val = t["parameter"].get("parameterName")
+                    if data_date and max_val is not None:
+                        try:
+                            daily_data.setdefault((location_name, data_date), {"minT": [], "maxT": []})["maxT"].append(float(max_val))
+                        except (ValueError, TypeError):
+                            pass
 
-            # 萃取數值 (支援 ElementValue 或 parameter 結構)
-            min_val = None
-            if "ElementValue" in t_min and len(t_min["ElementValue"]) > 0:
-                min_val = t_min["ElementValue"][0].get("MinTemperature") or t_min["ElementValue"][0].get("value")
-            elif "parameter" in t_min:
-                min_val = t_min["parameter"].get("parameterName")
+    records = []
+    for (r_name, d), vals in daily_data.items():
+        if vals["minT"] and vals["maxT"]:
+            records.append({
+                "regionName": r_name,
+                "dataDate": d,
+                "minT": round(min(vals["minT"]), 1),
+                "maxT": round(max(vals["maxT"]), 1)
+            })
 
-            max_val = None
-            if "ElementValue" in t_max and len(t_max["ElementValue"]) > 0:
-                max_val = t_max["ElementValue"][0].get("MaxTemperature") or t_max["ElementValue"][0].get("value")
-            elif "parameter" in t_max:
-                max_val = t_max["parameter"].get("parameterName")
-
-            if min_val is not None and max_val is not None:
-                try:
-                    min_temp = float(min_val)
-                    max_temp = float(max_val)
-                    records.append({
-                        "regionName": location_name,
-                        "dataDate": data_date,
-                        "minT": min_temp,
-                        "maxT": max_temp
-                    })
-                except ValueError:
-                    continue
-
+    records.sort(key=lambda x: (x["dataDate"], x["regionName"]))
     df = pd.DataFrame(records)
-    print(f"📊 成功解析氣溫資料：共 {len(df)} 筆預報紀錄。")
+    print(f"📊 成功解析氣溫資料：共 {len(df)} 筆預報紀錄 (涵蓋 {len(set(r['regionName'] for r in records))} 個縣市)。")
     return df
 
 
