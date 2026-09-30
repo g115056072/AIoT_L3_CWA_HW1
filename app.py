@@ -618,9 +618,9 @@ HTML_TEMPLATE = """
             });
 
             // 採用 CartoDB Positron 輕量高質感底圖，附 OpenStreetMap 容錯備份
-            const positron = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            const positron = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
-                attribution: '© OpenStreetMap, © CARTO'
+                attribution: '© OpenStreetMap'
             });
             positron.addTo(map);
 
