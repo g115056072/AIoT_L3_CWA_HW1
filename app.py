@@ -934,7 +934,7 @@ HTML_TEMPLATE = """
                 return;
             }
 
-            let csv = '\uFEFF觀測縣市,預報日期,最低氣溫(°C),最高氣溫(°C),溫差(°C)\n';
+            let csv = '\uFEFF觀測縣市,預報日期,最低氣溫(°C),最高氣溫(°C),溫差(°C)\n\';
             regionRecords.forEach(r => {
                 csv += `"${r.regionName}","${r.dataDate}",${r.minT},${r.maxT},${(r.maxT - r.minT).toFixed(1)}\n`;
             });
